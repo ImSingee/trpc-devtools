@@ -358,15 +358,15 @@
       }
       
       try {
-        // 首先尝试作为 JSON 解析
+        // First try to parse as JSON
         return JSON.parse(payloadStr);
       } catch {
         try {
-          // 如果 JSON 解析失败，尝试作为 JS 对象解析
+          // If JSON parsing fails, try to parse as JS object
           const fn = new Function(`return (${payloadStr})`);
           const result = fn();
           
-          // 确保结果是一个对象
+          // Ensure the result is an object
           if (result !== null && typeof result === 'object') {
             return result;
           }
@@ -442,7 +442,7 @@
           const methodString = formatMethodString(methodPath, methodPayload);
           addToHistory(methodString, methodType, errorText, true);
         } catch {
-          // 如果连格式化都失败了，就使用原始输入
+          // If even formatting fails, use the raw input
           addToHistory(`${methodPath}(${methodPayload})`, methodType, errorText, true);
         }
       } finally {
@@ -451,10 +451,10 @@
     }
 
     function deleteHistoryItem(event, itemBase64) {
-      event.stopPropagation(); // 防止触发 loadHistoryItem
+      event.stopPropagation(); // Prevent triggering loadHistoryItem
       
       const item = JSON.parse(atob(itemBase64));
-      if (confirm(`确定要删除这条历史记录吗？\n${item.method}`)) {
+      if (confirm(`Are you sure you want to delete this history item?\n${item.method}`)) {
         const history = getHistory();
         const index = history.findIndex(h => 
           h.method === item.method && 
