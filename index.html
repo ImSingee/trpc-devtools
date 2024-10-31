@@ -164,6 +164,20 @@
     .history-item.error {
       border-left: 4px solid #dc3545;
     }
+
+    .delete-history {
+      color: #dc3545;
+      margin-left: 10px;
+      padding: 0 5px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .delete-history:hover {
+      background-color: #dc3545;
+      color: white;
+      border-radius: 3px;
+    }
   </style>
 </head>
 <body>
@@ -303,6 +317,7 @@
             <span class="history-type">${item.methodType.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>
             <span class="history-method">${item.method.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>
             <span class="history-time">${formattedDate}</span>
+            <span class="delete-history" onclick="deleteHistoryItem(event, '${itemBase64}')">&times;</span>
           </div>
         `;
       }).join('');
@@ -400,6 +415,25 @@
         addToHistory(methodString, methodType, errorText, true);
       } finally {
         saveSettings();
+      }
+    }
+
+    function deleteHistoryItem(event, itemBase64) {
+      event.stopPropagation(); // 防止触发 loadHistoryItem
+      
+      const item = JSON.parse(atob(itemBase64));
+      if (confirm(`确定要删除这条历史记录吗？\n${item.method}`)) {
+        const history = getHistory();
+        const index = history.findIndex(h => 
+          h.method === item.method && 
+          h.timestamp === item.timestamp
+        );
+        
+        if (index !== -1) {
+          history.splice(index, 1);
+          saveHistory(history);
+          loadHistory();
+        }
       }
     }
 
