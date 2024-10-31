@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TRPC DevTools</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    
+    .container {
+      background-color: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .settings {
+      margin-bottom: 20px;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background-color: #f8f9fa;
+    }
+
+    .input-group {
+      margin-bottom: 10px;
+    }
+
+    .method-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+    }
+
+    .method-type {
+      flex: 0 0 100px;
+    }
+
+    .method-input-container {
+      flex: 1;
+    }
+
+    .input-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+
+    input[type="text"], select {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+
+    select {
+      background-color: white;
+    }
+
+    button {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    .result {
+      margin-top: 20px;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background-color: #f8f9fa;
+      white-space: pre-wrap;
+      font-family: monospace;
+    }
+
+    .error {
+      color: #dc3545;
+    }
+
+    .method-input {
+      font-family: monospace;
+    }
+
+    .history-container {
+      margin-top: 20px;
+      border-top: 1px solid #ddd;
+      padding-top: 20px;
+    }
+
+    .history-title {
+      font-weight: bold;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .history-list {
+      max-height: 300px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+
+    .history-item {
+      padding: 8px;
+      border-bottom: 1px solid #ddd;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .history-item:last-child {
+      border-bottom: none;
+    }
+
+    .history-item:hover {
+      background-color: #f8f9fa;
+    }
+
+    .history-method {
+      font-family: monospace;
+      flex: 1;
+    }
+
+    .history-type {
+      color: #666;
+      font-size: 0.9em;
+      margin-right: 10px;
+    }
+
+    .history-time {
+      color: #666;
+      font-size: 0.9em;
+      min-width: 150px;
+      text-align: right;
+    }
+
+    .clear-history {
+      font-size: 0.9em;
+      color: #dc3545;
+      cursor: pointer;
+    }
+
+    .clear-history:hover {
+      text-decoration: underline;
+    }
+
+    .history-item.error {
+      border-left: 4px solid #dc3545;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="settings">
+      <div class="input-group">
+        <label for="baseUrl">Base URL:</label>
+        <input type="text" id="baseUrl" placeholder="http://localhost:3335/trpc">
+      </div>
+      <div class="input-group">
+        <label for="token">Token (optional):</label>
+        <input type="text" id="token" placeholder="Bearer token">
+      </div>
+    </div>
+
+    <div class="method-row">
+      <div class="input-group method-type">
+        <label for="methodType">Type:</label>
+        <select id="methodType">
+          <option value="query">Query</option>
+          <option value="mutate">Mutate</option>
+        </select>
+      </div>
+
+      <div class="input-group method-input-container">
+        <label for="method">TRPC Method:</label>
+        <input type="text" id="method" class="method-input" placeholder="users.getProfile({ id: 123 })">
+      </div>
+    </div>
+
+    <button onclick="executeRequest()">Execute</button>
+
+    <div id="result" class="result">Results will appear here...</div>
+
+    <div class="history-container">
+      <div class="history-title">
+        <span>History (Last 100 Requests)</span>
+        <span class="clear-history" onclick="clearHistory()">Clear History</span>
+      </div>
+      <div id="historyList" class="history-list"></div>
+    </div>
+  </div>
+
+  <script>
+    const DEFAULT_BASE_URL = 'http://localhost:3335/trpc';
+    const MAX_HISTORY = 100;
+    
+    const STORAGE_KEYS = {
+      BASE_URL: 'trpcTester_baseUrl',
+      TOKEN: 'trpcTester_token',
+      LAST_METHOD: 'trpcTester_lastMethod',
+      LAST_RESULT: 'trpcTester_lastResult',
+      METHOD_TYPE: 'trpcTester_methodType',
+      HISTORY: 'trpcTester_history'
+    };
+
+    function saveSettings() {
+      const baseUrl = document.getElementById('baseUrl').value;
+      const token = document.getElementById('token').value;
+      const method = document.getElementById('method').value;
+      const methodType = document.getElementById('methodType').value;
+      const result = document.getElementById('result').innerHTML;
+
+      localStorage.setItem(STORAGE_KEYS.BASE_URL, baseUrl);
+      localStorage.setItem(STORAGE_KEYS.TOKEN, token);
+      localStorage.setItem(STORAGE_KEYS.LAST_METHOD, method);
+      localStorage.setItem(STORAGE_KEYS.LAST_RESULT, result);
+      localStorage.setItem(STORAGE_KEYS.METHOD_TYPE, methodType);
+    }
+
+    function loadSettings() {
+      const baseUrl = localStorage.getItem(STORAGE_KEYS.BASE_URL) || DEFAULT_BASE_URL;
+      const token = localStorage.getItem(STORAGE_KEYS.TOKEN) || '';
+      const lastMethod = localStorage.getItem(STORAGE_KEYS.LAST_METHOD) || '';
+      const lastResult = localStorage.getItem(STORAGE_KEYS.LAST_RESULT) || 'Results will appear here...';
+      const methodType = localStorage.getItem(STORAGE_KEYS.METHOD_TYPE) || 'query';
+
+      document.getElementById('baseUrl').value = baseUrl;
+      document.getElementById('token').value = token;
+      document.getElementById('method').value = lastMethod;
+      document.getElementById('result').innerHTML = lastResult;
+      document.getElementById('methodType').value = methodType;
+
+      loadHistory();
+    }
+
+    function getHistory() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY) || '[]');
+      } catch {
+        return [];
+      }
+    }
+
+    function saveHistory(history) {
+      localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(history));
+    }
+
+    function addToHistory(method, methodType, result, isError) {
+      const history = getHistory();
+      history.unshift({
+        method,
+        methodType,
+        result,
+        isError,
+        timestamp: new Date().toISOString()
+      });
+      
+      if (history.length > MAX_HISTORY) {
+        history.length = MAX_HISTORY;
+      }
+      
+      saveHistory(history);
+      loadHistory();
+    }
+
+    function clearHistory() {
+      if (confirm('Are you sure you want to clear all history?')) {
+        localStorage.removeItem(STORAGE_KEYS.HISTORY);
+        loadHistory();
+      }
+    }
+
+    function loadHistory() {
+      const historyList = document.getElementById('historyList');
+      const history = getHistory();
+      
+      historyList.innerHTML = history.map(item => {
+        const date = new Date(item.timestamp);
+        const formattedDate = date.toLocaleString();
+        const statusClass = item.isError ? 'error' : '';
+        
+        return `
+          <div class="history-item ${statusClass}" onclick="loadHistoryItem('${encodeURIComponent(JSON.stringify(item))}')">
+            <span class="history-type">${item.methodType}</span>
+            <span class="history-method">${item.method}</span>
+            <span class="history-time">${formattedDate}</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function loadHistoryItem(itemJson) {
+      const item = JSON.parse(decodeURIComponent(itemJson));
+      document.getElementById('method').value = item.method;
+      document.getElementById('methodType').value = item.methodType;
+      document.getElementById('result').innerHTML = item.result;
+      document.getElementById('result').className = `result ${item.isError ? 'error' : ''}`;
+      saveSettings();
+    }
+
+    function parseMethodString(methodString) {
+      try {
+        const match = methodString.match(/^([\w.]+)\((.*)\)$/);
+        if (!match) throw new Error('Invalid method format. Expected: method(args)');
+
+        const [, path, argsString] = match;
+        
+        let args = undefined;
+        
+        if (argsString.trim()) {
+          const evalFunction = new Function(`
+            return (${argsString});
+          `);
+          args = evalFunction();
+          
+          if (args !== null && typeof args === 'object') {
+            for (let key in args) {
+              if (typeof args[key] === 'string') {
+                args[key] = args[key].toString();
+              }
+            }
+          }
+        }
+
+        return {
+          path,
+          args
+        };
+      } catch (error) {
+        throw new Error(`Failed to parse method: ${error.message}`);
+      }
+    }
+
+    async function executeRequest() {
+      const resultDiv = document.getElementById('result');
+      const baseUrl = document.getElementById('baseUrl').value.trim() || DEFAULT_BASE_URL;
+      const token = document.getElementById('token').value.trim();
+      const methodString = document.getElementById('method').value.trim();
+      const methodType = document.getElementById('methodType').value;
+
+      try {
+        const { path, args } = parseMethodString(methodString);
+
+        const url = new URL(`${baseUrl}/${path}`);
+        const options = {
+          method: methodType === 'query' ? 'GET' : 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        };
+
+        if (token) {
+          options.headers['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+        }
+
+        if (args !== undefined) {
+          if (methodType === 'query') {
+            url.searchParams.set('input', JSON.stringify(args));
+          } else {
+            options.body = JSON.stringify({ json: args });
+          }
+        }
+
+        resultDiv.innerHTML = `Sending request to: ${url}\n\nOptions: ${JSON.stringify(options, null, 2)}\n\nWaiting for response...`;
+        resultDiv.className = 'result';
+
+        const response = await fetch(url, options);
+        const data = await response.json();
+
+        const resultText = `Status: ${response.status}\n\nResponse:\n${JSON.stringify(data, null, 2)}`;
+        resultDiv.innerHTML = resultText;
+        
+        const isError = !response.ok;
+        resultDiv.className = `result ${isError ? 'error' : ''}`;
+
+        addToHistory(methodString, methodType, resultText, isError);
+      } catch (error) {
+        const errorText = `Error: ${error.message}`;
+        resultDiv.innerHTML = errorText;
+        resultDiv.className = 'result error';
+        addToHistory(methodString, methodType, errorText, true);
+      } finally {
+        saveSettings();
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', loadSettings);
+
+    document.getElementById('method').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        executeRequest();
+      }
+    });
+
+    ['baseUrl', 'token', 'method', 'methodType'].forEach(id => {
+      document.getElementById(id).addEventListener('input', saveSettings);
+      document.getElementById(id).addEventListener('change', saveSettings);
+    });
+  </script>
+</body>
+</html>
