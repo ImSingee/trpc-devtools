@@ -178,6 +178,17 @@
       color: white;
       border-radius: 3px;
     }
+
+    textarea.method-input {
+      width: 100%;
+      font-family: monospace;
+      resize: vertical;
+      min-height: 60px;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
   </style>
 </head>
 <body>
@@ -203,9 +214,14 @@
       </div>
 
       <div class="input-group method-input-container">
-        <label for="method">TRPC Method:</label>
-        <input type="text" id="method" class="method-input" placeholder="users.getProfile({ id: 123 })">
+        <label for="methodPath">Method Path:</label>
+        <input type="text" id="methodPath" class="method-input" placeholder="users.getProfile">
       </div>
+    </div>
+
+    <div class="input-group">
+      <label for="methodPayload">Payload (JSON):</label>
+      <textarea id="methodPayload" class="method-input" placeholder='{ hello: 1 }' rows="3"></textarea>
     </div>
 
     <button onclick="executeRequest()">Execute</button>
@@ -229,7 +245,7 @@
       BASE_URL: 'trpcTester_baseUrl',
       TOKEN: 'trpcTester_token',
       LAST_METHOD: 'trpcTester_lastMethod',
-      LAST_RESULT: 'trpcTester_lastResult',
+      LAST_PAYLOAD: 'trpcTester_lastPayload',
       METHOD_TYPE: 'trpcTester_methodType',
       HISTORY: 'trpcTester_history'
     };
@@ -237,27 +253,31 @@
     function saveSettings() {
       const baseUrl = document.getElementById('baseUrl').value;
       const token = document.getElementById('token').value;
-      const method = document.getElementById('method').value;
+      const methodPath = document.getElementById('methodPath').value;
+      const methodPayload = document.getElementById('methodPayload').value;
       const methodType = document.getElementById('methodType').value;
       const result = document.getElementById('result').innerHTML;
 
       localStorage.setItem(STORAGE_KEYS.BASE_URL, baseUrl);
       localStorage.setItem(STORAGE_KEYS.TOKEN, token);
-      localStorage.setItem(STORAGE_KEYS.LAST_METHOD, method);
-      localStorage.setItem(STORAGE_KEYS.LAST_RESULT, result);
+      localStorage.setItem(STORAGE_KEYS.LAST_METHOD, methodPath);
+      localStorage.setItem(STORAGE_KEYS.LAST_PAYLOAD, methodPayload);
       localStorage.setItem(STORAGE_KEYS.METHOD_TYPE, methodType);
+      localStorage.setItem(STORAGE_KEYS.LAST_RESULT, result);
     }
 
     function loadSettings() {
       const baseUrl = localStorage.getItem(STORAGE_KEYS.BASE_URL) || DEFAULT_BASE_URL;
       const token = localStorage.getItem(STORAGE_KEYS.TOKEN) || '';
       const lastMethod = localStorage.getItem(STORAGE_KEYS.LAST_METHOD) || '';
+      const lastPayload = localStorage.getItem(STORAGE_KEYS.LAST_PAYLOAD) || '';
       const lastResult = localStorage.getItem(STORAGE_KEYS.LAST_RESULT) || 'Results will appear here...';
       const methodType = localStorage.getItem(STORAGE_KEYS.METHOD_TYPE) || 'query';
 
       document.getElementById('baseUrl').value = baseUrl;
       document.getElementById('token').value = token;
-      document.getElementById('method').value = lastMethod;
+      document.getElementById('methodPath').value = lastMethod;
+      document.getElementById('methodPayload').value = lastPayload;
       document.getElementById('result').innerHTML = lastResult;
       document.getElementById('methodType').value = methodType;
 
@@ -325,43 +345,44 @@
 
     function loadHistoryItem(itemBase64) {
       const item = JSON.parse(atob(itemBase64));
-      document.getElementById('method').value = item.method;
-      document.getElementById('methodType').value = item.methodType;
+      document.getElementById('methodPath').value = item.method;
+      document.getElementById('methodPayload').value = JSON.stringify(item.args);
       document.getElementById('result').innerHTML = item.result;
       document.getElementById('result').className = `result ${item.isError ? 'error' : ''}`;
       saveSettings();
     }
 
-    function parseMethodString(methodString) {
+    function parsePayload(payloadStr) {
+      if (!payloadStr.trim()) {
+        return undefined;
+      }
+      
       try {
-        const match = methodString.match(/^([\w.]+)\((.*)\)$/);
-        if (!match) throw new Error('Invalid method format. Expected: method(args)');
-
-        const [, path, argsString] = match;
-        
-        let args = undefined;
-        
-        if (argsString.trim()) {
-          const evalFunction = new Function(`
-            return (${argsString});
-          `);
-          args = evalFunction();
+        // 首先尝试作为 JSON 解析
+        return JSON.parse(payloadStr);
+      } catch {
+        try {
+          // 如果 JSON 解析失败，尝试作为 JS 对象解析
+          const fn = new Function(`return (${payloadStr})`);
+          const result = fn();
           
-          if (args !== null && typeof args === 'object') {
-            for (let key in args) {
-              if (typeof args[key] === 'string') {
-                args[key] = args[key].toString();
-              }
-            }
+          // 确保结果是一个对象
+          if (result !== null && typeof result === 'object') {
+            return result;
           }
+          throw new Error('Payload must be an object');
+        } catch (error) {
+          throw new Error(`Invalid payload: ${error.message}`);
         }
+      }
+    }
 
-        return {
-          path,
-          args
-        };
+    function formatMethodString(methodPath, methodPayload) {
+      try {
+        const payload = methodPayload.trim() ? parsePayload(methodPayload) : undefined;
+        return `${methodPath}(${payload ? JSON.stringify(payload) : ''})`;
       } catch (error) {
-        throw new Error(`Failed to parse method: ${error.message}`);
+        throw new Error(`Invalid payload: ${error.message}`);
       }
     }
 
@@ -369,13 +390,17 @@
       const resultDiv = document.getElementById('result');
       const baseUrl = document.getElementById('baseUrl').value.trim() || DEFAULT_BASE_URL;
       const token = document.getElementById('token').value.trim();
-      const methodString = document.getElementById('method').value.trim();
+      const methodPath = document.getElementById('methodPath').value.trim();
+      const methodPayload = document.getElementById('methodPayload').value.trim();
       const methodType = document.getElementById('methodType').value;
 
       try {
-        const { path, args } = parseMethodString(methodString);
+        let args = undefined;
+        if (methodPayload) {
+          args = parsePayload(methodPayload);
+        }
 
-        const url = new URL(`${baseUrl}/${path}`);
+        const url = new URL(`${baseUrl}/${methodPath}`);
         const options = {
           method: methodType === 'query' ? 'GET' : 'POST',
           headers: {
@@ -407,12 +432,19 @@
         const isError = !response.ok;
         resultDiv.className = `result ${isError ? 'error' : ''}`;
 
+        const methodString = formatMethodString(methodPath, methodPayload);
         addToHistory(methodString, methodType, resultText, isError);
       } catch (error) {
         const errorText = `Error: ${error.message}`;
         resultDiv.innerHTML = errorText;
         resultDiv.className = 'result error';
-        addToHistory(methodString, methodType, errorText, true);
+        try {
+          const methodString = formatMethodString(methodPath, methodPayload);
+          addToHistory(methodString, methodType, errorText, true);
+        } catch {
+          // 如果连格式化都失败了，就使用原始输入
+          addToHistory(`${methodPath}(${methodPayload})`, methodType, errorText, true);
+        }
       } finally {
         saveSettings();
       }
@@ -439,15 +471,21 @@
 
     document.addEventListener('DOMContentLoaded', loadSettings);
 
-    document.getElementById('method').addEventListener('keypress', function(e) {
+    ['baseUrl', 'token', 'methodPath', 'methodPayload', 'methodType'].forEach(id => {
+      document.getElementById(id).addEventListener('input', saveSettings);
+      document.getElementById(id).addEventListener('change', saveSettings);
+    });
+
+    document.getElementById('methodPath').addEventListener('keypress', function(e) {
       if (e.key === 'Enter') {
         executeRequest();
       }
     });
 
-    ['baseUrl', 'token', 'method', 'methodType'].forEach(id => {
-      document.getElementById(id).addEventListener('input', saveSettings);
-      document.getElementById(id).addEventListener('change', saveSettings);
+    document.getElementById('methodPayload').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter' && e.ctrlKey) {
+        executeRequest();
+      }
     });
   </script>
 </body>
