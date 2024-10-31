@@ -376,7 +376,7 @@
           if (methodType === 'query') {
             url.searchParams.set('input', JSON.stringify(args));
           } else {
-            options.body = JSON.stringify({ json: args });
+            options.body = JSON.stringify(args);
           }
         }
 
