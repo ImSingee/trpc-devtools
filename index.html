@@ -295,19 +295,21 @@
         const date = new Date(item.timestamp);
         const formattedDate = date.toLocaleString();
         const statusClass = item.isError ? 'error' : '';
+
+        const itemBase64 = btoa(JSON.stringify(item));
         
         return `
-          <div class="history-item ${statusClass}" onclick="loadHistoryItem('${encodeURIComponent(JSON.stringify(item))}')">
-            <span class="history-type">${item.methodType}</span>
-            <span class="history-method">${item.method}</span>
+          <div class="history-item ${statusClass}" onclick="loadHistoryItem('${itemBase64}')">
+            <span class="history-type">${item.methodType.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>
+            <span class="history-method">${item.method.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>
             <span class="history-time">${formattedDate}</span>
           </div>
         `;
       }).join('');
     }
 
-    function loadHistoryItem(itemJson) {
-      const item = JSON.parse(decodeURIComponent(itemJson));
+    function loadHistoryItem(itemBase64) {
+      const item = JSON.parse(atob(itemBase64));
       document.getElementById('method').value = item.method;
       document.getElementById('methodType').value = item.methodType;
       document.getElementById('result').innerHTML = item.result;
