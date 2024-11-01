@@ -262,7 +262,7 @@
       const methodPath = document.getElementById('methodPath').value;
       const methodPayload = document.getElementById('methodPayload').value;
       const methodType = document.getElementById('methodType').value;
-      const result = document.getElementById('result').innerHTML;
+      const result = document.getElementById('result').innerText;
       const useSuperJson = document.getElementById('useSuperJson').checked;
 
       localStorage.setItem(STORAGE_KEYS.BASE_URL, baseUrl);
@@ -287,7 +287,7 @@
       document.getElementById('token').value = token;
       document.getElementById('methodPath').value = lastMethod;
       document.getElementById('methodPayload').value = lastPayload;
-      document.getElementById('result').innerHTML = lastResult;
+      document.getElementById('result').innerText = lastResult;
       document.getElementById('methodType').value = methodType;
       document.getElementById('useSuperJson').checked = useSuperJson;
 
@@ -352,14 +352,18 @@
 
         const itemEncoded = safeEncode(item);
         
-        return `
-          <div class="history-item ${statusClass}" onclick="loadHistoryItem('${itemEncoded}')">
-            <span class="history-type">${item.methodType.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>
-            <span class="history-method">${item.method.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>
-            <span class="history-time">${formattedDate}</span>
-            <span class="delete-history" onclick="deleteHistoryItem(event, '${itemEncoded}')">&times;</span>
-          </div>
+        const div = document.createElement('div');
+        div.className = `history-item ${statusClass}`;
+        div.onclick = () => loadHistoryItem(itemEncoded);
+        
+        div.innerHTML = `
+          <span class="history-type">${item.methodType}</span>
+          <span class="history-method">${item.method}</span>
+          <span class="history-time">${formattedDate}</span>
+          <span class="delete-history" onclick="event.stopPropagation(); deleteHistoryItem(event, '${itemEncoded}')">&times;</span>
         `;
+        
+        return div.outerHTML;
       }).join('');
     }
 
@@ -367,7 +371,7 @@
       const item = safeDecode(itemEncoded);
       document.getElementById('methodPath').value = item.method;
       document.getElementById('methodPayload').value = JSON.stringify(item.args);
-      document.getElementById('result').innerHTML = item.result;
+      document.getElementById('result').innerText = item.result;
       document.getElementById('result').className = `result ${item.isError ? 'error' : ''}`;
       saveSettings();
     }
@@ -460,14 +464,14 @@
           }
         }
 
-        resultDiv.innerHTML = `Sending request to: ${url}\n\nOptions: ${JSON.stringify(options, null, 2)}\n\nWaiting for response...`;
+        resultDiv.innerText = `Sending request to: ${url}\n\nOptions: ${JSON.stringify(options, null, 2)}\n\nWaiting for response...`;
         resultDiv.className = 'result';
 
         const response = await fetch(url, options);
         const data = await response.json();
 
         const resultText = `Status: ${response.status}\n\nResponse:\n${JSON.stringify(data, null, 2)}`;
-        resultDiv.innerHTML = resultText;
+        resultDiv.innerText = resultText;
         
         const isError = !response.ok;
         resultDiv.className = `result ${isError ? 'error' : ''}`;
@@ -476,7 +480,7 @@
         addToHistory(methodString, methodType, resultText, isError);
       } catch (error) {
         const errorText = `Error: ${error.message}`;
-        resultDiv.innerHTML = errorText;
+        resultDiv.innerText = errorText;
         resultDiv.className = 'result error';
         try {
           const methodString = formatMethodString(methodPath, methodPayload);
