@@ -202,6 +202,11 @@
         <label for="token">Token (optional):</label>
         <input type="text" id="token" placeholder="Bearer token">
       </div>
+      <div class="input-group">
+        <label>
+          <input type="checkbox" id="useSuperJson"> Use SuperJSON
+        </label>
+      </div>
     </div>
 
     <div class="method-row">
@@ -247,7 +252,8 @@
       LAST_METHOD: 'trpcTester_lastMethod',
       LAST_PAYLOAD: 'trpcTester_lastPayload',
       METHOD_TYPE: 'trpcTester_methodType',
-      HISTORY: 'trpcTester_history'
+      LAST_RESULT: 'trpcTester_lastResult',
+      USE_SUPERJSON: 'trpcTester_useSuperJson',
     };
 
     function saveSettings() {
@@ -257,6 +263,7 @@
       const methodPayload = document.getElementById('methodPayload').value;
       const methodType = document.getElementById('methodType').value;
       const result = document.getElementById('result').innerHTML;
+      const useSuperJson = document.getElementById('useSuperJson').checked;
 
       localStorage.setItem(STORAGE_KEYS.BASE_URL, baseUrl);
       localStorage.setItem(STORAGE_KEYS.TOKEN, token);
@@ -264,6 +271,7 @@
       localStorage.setItem(STORAGE_KEYS.LAST_PAYLOAD, methodPayload);
       localStorage.setItem(STORAGE_KEYS.METHOD_TYPE, methodType);
       localStorage.setItem(STORAGE_KEYS.LAST_RESULT, result);
+      localStorage.setItem(STORAGE_KEYS.USE_SUPERJSON, useSuperJson);
     }
 
     function loadSettings() {
@@ -273,6 +281,7 @@
       const lastPayload = localStorage.getItem(STORAGE_KEYS.LAST_PAYLOAD) || '';
       const lastResult = localStorage.getItem(STORAGE_KEYS.LAST_RESULT) || 'Results will appear here...';
       const methodType = localStorage.getItem(STORAGE_KEYS.METHOD_TYPE) || 'query';
+      const useSuperJson = localStorage.getItem(STORAGE_KEYS.USE_SUPERJSON) === 'true';
 
       document.getElementById('baseUrl').value = baseUrl;
       document.getElementById('token').value = token;
@@ -280,6 +289,7 @@
       document.getElementById('methodPayload').value = lastPayload;
       document.getElementById('result').innerHTML = lastResult;
       document.getElementById('methodType').value = methodType;
+      document.getElementById('useSuperJson').checked = useSuperJson;
 
       loadHistory();
     }
@@ -321,6 +331,16 @@
       }
     }
 
+    function safeEncode(obj) {
+      const jsonString = JSON.stringify(obj);
+      return btoa(encodeURIComponent(jsonString));
+    }
+
+    function safeDecode(str) {
+      const jsonString = decodeURIComponent(atob(str));
+      return JSON.parse(jsonString);
+    }
+
     function loadHistory() {
       const historyList = document.getElementById('historyList');
       const history = getHistory();
@@ -330,21 +350,21 @@
         const formattedDate = date.toLocaleString();
         const statusClass = item.isError ? 'error' : '';
 
-        const itemBase64 = btoa(JSON.stringify(item));
+        const itemEncoded = safeEncode(item);
         
         return `
-          <div class="history-item ${statusClass}" onclick="loadHistoryItem('${itemBase64}')">
+          <div class="history-item ${statusClass}" onclick="loadHistoryItem('${itemEncoded}')">
             <span class="history-type">${item.methodType.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>
             <span class="history-method">${item.method.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>
             <span class="history-time">${formattedDate}</span>
-            <span class="delete-history" onclick="deleteHistoryItem(event, '${itemBase64}')">&times;</span>
+            <span class="delete-history" onclick="deleteHistoryItem(event, '${itemEncoded}')">&times;</span>
           </div>
         `;
       }).join('');
     }
 
-    function loadHistoryItem(itemBase64) {
-      const item = JSON.parse(atob(itemBase64));
+    function loadHistoryItem(itemEncoded) {
+      const item = safeDecode(itemEncoded);
       document.getElementById('methodPath').value = item.method;
       document.getElementById('methodPayload').value = JSON.stringify(item.args);
       document.getElementById('result').innerHTML = item.result;
@@ -412,11 +432,31 @@
           options.headers['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
         }
 
-        if (args !== undefined) {
-          if (methodType === 'query') {
-            url.searchParams.set('input', JSON.stringify(args));
-          } else {
-            options.body = JSON.stringify(args);
+        const useSuperJson = document.getElementById('useSuperJson').checked;
+        if (useSuperJson) {
+          options.headers['Content-Type'] = 'application/json';
+          options.headers['trpc-transformer'] = 'superjson';
+          
+          if (args !== undefined) {
+            if (methodType === 'query') {
+              url.searchParams.set('input', JSON.stringify({
+                json: args,
+                meta: { superjson: true }
+              }));
+            } else {
+              options.body = JSON.stringify({
+                json: args,
+                meta: { superjson: true }
+              });
+            }
+          }
+        } else {
+          if (args !== undefined) {
+            if (methodType === 'query') {
+              url.searchParams.set('input', JSON.stringify(args));
+            } else {
+              options.body = JSON.stringify(args);
+            }
           }
         }
 
@@ -450,10 +490,10 @@
       }
     }
 
-    function deleteHistoryItem(event, itemBase64) {
-      event.stopPropagation(); // Prevent triggering loadHistoryItem
+    function deleteHistoryItem(event, itemEncoded) {
+      event.stopPropagation();
       
-      const item = JSON.parse(atob(itemBase64));
+      const item = safeDecode(itemEncoded);
       if (confirm(`Are you sure you want to delete this history item?\n${item.method}`)) {
         const history = getHistory();
         const index = history.findIndex(h => 
